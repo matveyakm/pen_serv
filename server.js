@@ -192,7 +192,7 @@ wss.on('connection', (ws) => {
   ws.on('close', () => console.log('Зритель отключён'));
 });
 
-const PORT = 3000;
+const PORT = 5252;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🚀 Сервер запущен!`);
   console.log(`Открой в браузере: http://localhost:${PORT}`);
