@@ -24,6 +24,7 @@ app.post('/api/dot', (req, res) => {
     wss.clients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify({ type: 'new_dot', dot }));
+        client.send(JSON.stringify({ type: 'activity_dot' }));
       }
     });
     
@@ -36,9 +37,17 @@ app.post('/api/dot', (req, res) => {
 
 app.get('/health', (req, res) => {
     res.status(200).send('OK');
+    console.log('Получен запрос здоровья активности');
+
+    // Уведомляем всех браузеров
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify({ type: 'activity_health' }));
+        }
+    });
 });
 
-// Главная страница с холстом для просмотра
+// Главная страница с холстом для просмотра + индикаторы
 app.get('/', (req, res) => {
     res.send(`
   <!DOCTYPE html>
@@ -48,17 +57,82 @@ app.get('/', (req, res) => {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Live письмо с NeoSmartpen R1</title>
     <style>
-      body { margin: 0; background: #f0f0f0; font-family: system-ui, sans-serif; }
+      body { margin: 0; background: #f0f0f0; font-family: system-ui, sans-serif; position: relative; }
       canvas { display: block; margin: 20px auto; background: white; box-shadow: 0 8px 30px rgba(0,0,0,0.15); border-radius: 8px; }
-      h1 { text-align: center; padding: 20px; color: #333; }
+      h1 { text-align: center; padding: 20px; color: #333; margin-bottom: 0; }
       button { display: block; margin: 20px auto; padding: 12px 24px; font-size: 18px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; }
       button:hover { background: #0056b3; }
+
+      /* Контейнер для индикаторов в правом верхнем углу */
+      #indicators-container {
+        position: fixed;           /* Фиксировано на экране */
+        bottom: 40px;              /* Отступ от низа */
+        right: 240px;               /* Отступ от правого края */
+        display: flex;
+        flex-direction: row;       /* В строку, как ты хотел */
+        gap: 14px;
+        z-index: 1000;             /* Поверх всего */
+        pointer-events: none;      /* Чтобы не мешал кликам под ними */
+      }
+
+      .indicator {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        transition: all 0.3s ease;
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 12px;
+        font-weight: bold;
+      }
+
+      /* Разные размеры */
+      #ws-indicator { 
+        width: 40px; height: 40px; 
+        background-color: red;
+      }
+      #health-indicator { background-color: red; }
+      #dot-indicator { background-color: #aaa; }
+
+      /* Таймер сверху круга */
+      .timer-label {
+        position: absolute;
+        top: -20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0,0,0,0.7);
+        color: white;
+        font-size: 11px;
+        padding: 2px 6px;
+        border-radius: 8px;
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+      }
+
+      .indicator.active .timer-label {
+        opacity: 1;
+      }
     </style>
   </head>
   <body>
     <h1>Письмо в реальном времени с NeoSmartpen R1</h1>
     <button onclick="clearCanvas()">Очистить холст</button>
     <canvas id="canvas"></canvas>
+
+    <div id="indicators-container">
+      <div id="ws-indicator" class="indicator"></div>
+      <div id="health-indicator" class="indicator">
+        <div class="timer-label">60s</div>
+      </div>
+      <div id="dot-indicator" class="indicator">
+        <div class="timer-label">60s</div>
+      </div>
+    </div>
   
     <script>
       const canvas = document.getElementById('canvas');
@@ -72,12 +146,61 @@ app.get('/', (req, res) => {
   
       let previousX = null;
       let previousY = null;
-  
+
+      // Индикаторы
+      const wsIndicator = document.getElementById('ws-indicator');
+      const healthIndicator = document.getElementById('health-indicator');
+      const dotIndicator = document.getElementById('dot-indicator');
+      const healthTimer = healthIndicator.querySelector('.timer-label');
+      const dotTimer = dotIndicator.querySelector('.timer-label');
+
+      let healthTimerId = null;
+      let dotTimerId = null;
+
+      function startTimer(indicator, timerLabel, color, currentTimerId, seconds = 60) {
+        // Если уже идёт таймер — останавливаем его
+        if (currentTimerId !== null) {
+          clearInterval(currentTimerId);
+        }
+
+        // Активируем индикатор
+        indicator.style.backgroundColor = color;
+        indicator.classList.add('active');
+
+        timerLabel.textContent = seconds + 's';
+
+        // Запускаем новый таймер и сохраняем его ID
+        const newIntervalId = setInterval(() => {
+          seconds--;
+          timerLabel.textContent = seconds + 's';
+
+          if (seconds <= 0) {
+            clearInterval(newIntervalId);
+            indicator.style.backgroundColor = color == "green" ? '#aaa' : "red";
+            indicator.classList.remove('active');
+            // Сбрасываем ID
+            if (indicator === healthIndicator) healthTimerId = null;
+            if (indicator === dotIndicator) dotTimerId = null;
+          }
+        }, 1000);
+
+        // Сохраняем новый ID
+        if (indicator === healthIndicator) healthTimerId = newIntervalId;
+        if (indicator === dotIndicator) dotTimerId = newIntervalId;
+      }
+
+      // WebSocket + основной индикатор (красный/зелёный)
       const ws = new WebSocket('ws://' + location.hostname + ':' + location.port);
   
       ws.onopen = () => {
-        console.log('Подключено');
+        console.log('WS подключён');
+        wsIndicator.style.backgroundColor = 'green';
         ws.send(JSON.stringify({ type: 'request_all_dots' }));
+      };
+  
+      ws.onclose = ws.onerror = () => {
+        console.log('WS отключён');
+        wsIndicator.style.backgroundColor = 'red';
       };
   
       ws.onmessage = (event) => {
@@ -86,9 +209,13 @@ app.get('/', (req, res) => {
           data.dots.forEach(processDot);
         } else if (data.type === 'new_dot') {
           processDot(data.dot);
+        } else if (data.type === 'activity_health') {
+          startTimer(healthIndicator, healthTimer, '#007bff', healthTimerId, 6);  // синий
+        } else if (data.type === 'activity_dot') {
+          startTimer(dotIndicator, dotTimer, 'green', dotTimerId, 6);
         }
       };
-  
+
       function processDot(dot) {
         const force = dot.force || 0.5;
         const lineWidth = 0.4 + force * 0.8;
@@ -165,10 +292,10 @@ app.get('/', (req, res) => {
         previousY = null;
         allDots.forEach(processDot);
       }
-  
+
       window.onresize = resizeCanvas;
       resizeCanvas();
-  
+
       function clearCanvas() {
         allDots = [];
         previousX = null;
@@ -179,7 +306,7 @@ app.get('/', (req, res) => {
   </body>
   </html>
     `);
-  });
+});
 
 // Обработка запроса всех точек
 wss.on('connection', (ws) => {
@@ -196,7 +323,7 @@ wss.on('connection', (ws) => {
   ws.on('close', () => console.log('Зритель отключён'));
 });
 
-const PORT = 5252;
+const PORT = 3000;
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n🚀 Сервер запущен!`);
   console.log(`Открой в браузере: http://localhost:${PORT}`);
