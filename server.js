@@ -157,7 +157,7 @@ app.get('/', (req, res) => {
       let healthTimerId = null;
       let dotTimerId = null;
 
-      function startTimer(indicator, timerLabel, color, currentTimerId, seconds = 60) {
+      function startTimer(indicator, timerLabel, color, currentTimerId) {
         // Если уже идёт таймер — останавливаем его
         if (currentTimerId !== null) {
           clearInterval(currentTimerId);
@@ -166,22 +166,27 @@ app.get('/', (req, res) => {
         // Активируем индикатор
         indicator.style.backgroundColor = color;
         indicator.classList.add('active');
-
+        
+        let seconds = 0;
         timerLabel.textContent = seconds + 's';
 
         // Запускаем новый таймер и сохраняем его ID
         const newIntervalId = setInterval(() => {
-          seconds--;
+          seconds++;
           timerLabel.textContent = seconds + 's';
 
-          if (seconds <= 0) {
-            clearInterval(newIntervalId);
+          if (seconds >= 6) {
             indicator.style.backgroundColor = color == "green" ? '#aaa' : "red";
+            
+          }
+
+          if (seconds >= 300) {
+            clearInterval(newIntervalId);
             indicator.classList.remove('active');
             // Сбрасываем ID
             if (indicator === healthIndicator) healthTimerId = null;
             if (indicator === dotIndicator) dotTimerId = null;
-          }
+        }       
         }, 1000);
 
         // Сохраняем новый ID
@@ -210,9 +215,9 @@ app.get('/', (req, res) => {
         } else if (data.type === 'new_dot') {
           processDot(data.dot);
         } else if (data.type === 'activity_health') {
-          startTimer(healthIndicator, healthTimer, '#007bff', healthTimerId, 6);  // синий
+          startTimer(healthIndicator, healthTimer, '#007bff', healthTimerId);  // синий
         } else if (data.type === 'activity_dot') {
-          startTimer(dotIndicator, dotTimer, 'green', dotTimerId, 6);
+          startTimer(dotIndicator, dotTimer, 'green', dotTimerId);
         }
       };
 
