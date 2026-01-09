@@ -34,6 +34,10 @@ app.post('/api/dot', (req, res) => {
   }
 });
 
+app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+});
+
 // Главная страница с холстом для просмотра
 app.get('/', (req, res) => {
     res.send(`
