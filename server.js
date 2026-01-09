@@ -193,6 +193,9 @@ app.get('/', (req, res) => {
         if (indicator === healthIndicator) healthTimerId = newIntervalId;
         if (indicator === dotIndicator) dotTimerId = newIntervalId;
       }
+    
+      let buffer = [];  // Буфер для точек (чтобы избежать асинхронных скачков)
+      let lastTime = 0;  // Для проверки порядка
 
       // WebSocket + основной индикатор (красный/зелёный)
       const ws = new WebSocket('ws://' + location.hostname + ':' + location.port);
@@ -221,36 +224,55 @@ app.get('/', (req, res) => {
         }
       };
 
-      function processDot(dot) {
-        const force = dot.force || 0.5;
-        const lineWidth = 0.4 + force * 0.8;
-  
-        const x = offsetX + dot.x * scaleX;
-        const y = offsetY + dot.y * scaleY;
-  
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-        ctx.strokeStyle = 'black';
-        ctx.lineWidth = lineWidth;
-  
-        if (dot.dotType === 0 || dot.dotType === undefined || previousX === null) {
-          previousX = x;
-          previousY = y;
-        } else {
-          ctx.beginPath();
-          ctx.moveTo(previousX, previousY);
-          ctx.lineTo(x, y);
-          ctx.stroke();
-  
-          previousX = x;
-          previousY = y;
-  
-          if (dot.dotType === 2) {
-            previousX = null;
-            previousY = null;
-          }
+        function processDot(dot) {
+            buffer.push(dot);
+
+            setTimeout(() => {
+              buffer.sort((a, b) => a.time - b.time);
+
+            // Отрисовываем только если порядок правильный
+            requestAnimationFrame(drawFromBuffer);
+            }, 200);
+
+            // Сортируем буфер по time (на случай асинхронного прихода)
+            
         }
-      }
+
+        function drawFromBuffer() {
+            while (buffer.length > 0) {
+            const dot = buffer.shift();  // Берём по порядку
+
+            console.log('Time:', dot.time);
+            const force = dot.force || 0.5;
+            const lineWidth = 0.4 + force * 0.8;
+
+            const x = offsetX + dot.x * scaleX;
+            const y = offsetY + dot.y * scaleY;
+
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = lineWidth;
+
+            if (dot.dotType === 0 || dot.dotType === undefined || previousX === null) {
+                previousX = x;
+                previousY = y;
+            } else {
+                ctx.beginPath();
+                ctx.moveTo(previousX, previousY);
+                ctx.lineTo(x, y);
+                ctx.stroke();
+
+                previousX = x;
+                previousY = y;
+
+                if (dot.dotType === 2) {
+                previousX = null;
+                previousY = null;
+                }
+            }
+            }
+        }
   
       function resizeCanvas() {
         const padding = 40;
