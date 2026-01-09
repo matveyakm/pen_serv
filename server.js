@@ -17,7 +17,7 @@ let allDots = [];
 // POST-эндпоинт для точек от ручки
 app.post('/api/dot', (req, res) => {
   const dot = req.body;
-  if (dot && 'x' in dot && 'y' in dot) {
+  if (dot && 'x' in dot && 'y' in dot && 'dotType' in dot) {
     allDots.push(dot);
     
     // Рассылаем всем клиентам
@@ -28,7 +28,7 @@ app.post('/api/dot', (req, res) => {
       }
     });
     
-    console.log(`Получена точка: x=${dot.x}, y=${dot.y}, force=${dot.force || 'N/A'}`);
+    console.log(`Получена точка: x=${dot.x}, y=${dot.y}, type=${dot.dotType}, time=${dot.time}`);
     res.json({ success: true });
   } else {
     res.status(400).json({ error: 'Invalid dot data' });
