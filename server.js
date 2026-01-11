@@ -58,21 +58,21 @@ app.get('/', (req, res) => {
     <title>Live письмо с NeoSmartpen R1</title>
     <style>
       body { margin: 0; background: #f0f0f0; font-family: system-ui, sans-serif; position: relative; }
-      canvas { display: block; margin: 20px auto; background: white; box-shadow: 0 8px 30px rgba(0,0,0,0.15); border-radius: 8px; }
-      h1 { text-align: center; padding: 20px; color: #333; margin-bottom: 0; }
-      button { display: block; margin: 20px auto; padding: 12px 24px; font-size: 18px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; }
+      canvas { display: block; margin: 5px auto; background: white; box-shadow: 0 8px 30px rgba(0,0,0,0.15); border-radius: 8px; }
+      h3 { text-align: center; padding: 1px; color: #333; margin-bottom: 0; }
+      button { display: block; margin: 1px auto; padding: 12px 24px; font-size: 18px; background: #007bff; color: white; border: none; border-radius: 8px; cursor: pointer; }
       button:hover { background: #0056b3; }
 
       /* Контейнер для индикаторов в правом верхнем углу */
       #indicators-container {
-        position: fixed;           /* Фиксировано на экране */
-        bottom: 40px;              /* Отступ от низа */
-        right: 240px;               /* Отступ от правого края */
+        position: fixed;           
+        bottom: 40px;             
+        right: 240px;               
         display: flex;
-        flex-direction: row;       /* В строку, как ты хотел */
+        flex-direction: row;       
         gap: 14px;
-        z-index: 1000;             /* Поверх всего */
-        pointer-events: none;      /* Чтобы не мешал кликам под ними */
+        z-index: 1000;             
+        pointer-events: none;      
       }
 
       .indicator {
@@ -89,6 +89,54 @@ app.get('/', (req, res) => {
         font-size: 12px;
         font-weight: bold;
       }
+
+    #controls-container {
+        position: fixed;
+        bottom: 120px;
+        right: 350px;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;       
+        align-items: center;
+        gap: 1px;
+        pointer-events: none;
+      }
+
+      .page-buttons {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        margin: -30px 0;
+        pointer-events: auto;
+      }
+    
+      .page-buttons button {
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        font-size: 18px;
+        font-weight: bold;
+        background: #444;
+        color: white;
+        border: none;
+        border-radius: 50%;
+        cursor: pointer;
+        transition: all 0.2s;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+      }
+    
+      .page-buttons button:hover {
+        
+        transform: translateY(-2px);
+        box-shadow: 0 6px 15px rgba(0,123,255,0.6);
+     }
+    
+     .page-buttons button.active {
+        box-shadow: 0 0 0 4px rgba(0,123,255,0.8);
+     }
+     .page-buttons button.written {
+        background: #00aa7b;
+     }
 
       /* Разные размеры */
       #ws-indicator { 
@@ -120,9 +168,24 @@ app.get('/', (req, res) => {
     </style>
   </head>
   <body>
-    <h1>Письмо в реальном времени с NeoSmartpen R1</h1>
-    <button onclick="clearCanvas()">Очистить холст</button>
+    <h3>Письмо в реальном времени с NeoSmartpen R1</h3>
+
     <canvas id="canvas"></canvas>
+    
+    <div id="controls-container">
+  <div class="page-buttons">
+    <button onclick="goToPage(1)">1</button>
+    <button onclick="goToPage(2)">2</button>
+    <button onclick="goToPage(3)">3</button>
+    <button onclick="goToPage(4)">4</button>
+    <button onclick="goToPage(5)">5</button>
+    <button onclick="goToPage(6)">6</button>
+    <button onclick="goToPage(7)">7</button>
+    <button onclick="goToPage(8)">8</button>
+    <button onclick="goToPage(9)">9</button>
+    <button onclick="goToPage(10)">10</button>
+    <button onclick="clearCurrentPage()" style="margin-top:10px; background:red">C</button>
+  </div>
 
     <div id="indicators-container">
       <div id="ws-indicator" class="indicator"></div>
@@ -133,6 +196,8 @@ app.get('/', (req, res) => {
         <div class="timer-label">60s</div>
       </div>
     </div>
+
+    
   
     <script>
       const canvas = document.getElementById('canvas');
@@ -193,7 +258,10 @@ app.get('/', (req, res) => {
         if (indicator === healthIndicator) healthTimerId = newIntervalId;
         if (indicator === dotIndicator) dotTimerId = newIntervalId;
       }
-    
+      
+      const pages = Array.from({ length: 10 }, () => []);
+      let currentPageIndex = 0;
+
       let buffer = [];  // Буфер для точек (чтобы избежать асинхронных скачков)
       let lastTime = 0;  // Для проверки порядка
 
@@ -215,8 +283,22 @@ app.get('/', (req, res) => {
         const data = JSON.parse(event.data);
         if (data.type === 'all_dots') {
           data.dots.forEach(processDot);
+          data.dots.forEach(pages[currentPageIndex].push);
+          document.querySelectorAll('.page-buttons button').forEach(btn => {
+        
+            if (parseInt(btn.textContent) === currentPageIndex + 1) {
+                btn.classList.add('written');
+            }
+          });
         } else if (data.type === 'new_dot') {
           processDot(data.dot);
+          pages[currentPageIndex].push(data.dot);
+          document.querySelectorAll('.page-buttons button').forEach(btn => {
+        
+            if (parseInt(btn.textContent) === currentPageIndex + 1) {
+                btn.classList.add('written');
+            }
+          });
         } else if (data.type === 'activity_health') {
           startTimer(healthIndicator, healthTimer, '#007bff', healthTimerId);  // синий
         } else if (data.type === 'activity_dot') {
@@ -246,8 +328,8 @@ app.get('/', (req, res) => {
             const force = dot.force || 0.5;
             const lineWidth = 0.4 + force * 0.8;
 
-            const x = offsetX + dot.x * scaleX;
-            const y = offsetY + dot.y * scaleY;
+            const x = dot.x * scaleX * 1.1 + offsetX * 0.9;
+            const y = dot.y * scaleY * 1 - offsetY * 0.65;
 
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
@@ -275,7 +357,7 @@ app.get('/', (req, res) => {
         }
   
       function resizeCanvas() {
-        const padding = 40;
+        const padding = 10;
         const cssWidth = window.innerWidth - padding * 2;
         const cssHeight = window.innerHeight - padding * 2;
   
@@ -290,7 +372,7 @@ app.get('/', (req, res) => {
   
         const ratio = PAGE_WIDTH_MM / PAGE_HEIGHT_MM;
   
-        const extra = 0.8;  
+        const extra = 0.95;  
   
         let drawWidth = cssWidth * extra;
         let drawHeight = cssHeight * extra;
@@ -304,8 +386,8 @@ app.get('/', (req, res) => {
         scaleX = drawWidth / PAGE_WIDTH_MM;
         scaleY = drawHeight / PAGE_HEIGHT_MM;
   
-        offsetX = (cssWidth - drawWidth) / 2;
-        offsetY = (cssHeight - drawHeight) / 2;
+        offsetX =  (cssWidth - drawWidth) / 2;
+        offsetY =  (cssHeight - drawHeight) / 2;
   
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(0, 0, cssWidth, cssHeight);
@@ -322,12 +404,39 @@ app.get('/', (req, res) => {
 
       window.onresize = resizeCanvas;
       resizeCanvas();
-
+    
       function clearCanvas() {
         allDots = [];
         previousX = null;
         previousY = null;
         resizeCanvas();
+      }
+
+      function goToPage(pageNumber) {
+        currentPageIndex = pageNumber - 1;
+        clearCanvas();
+
+        document.querySelectorAll('.page-buttons button').forEach(btn => {
+        btn.classList.remove('active');
+        if (parseInt(btn.textContent) === pageNumber) {
+            btn.classList.add('active');
+        }
+        });
+
+        for (const dot of pages[currentPageIndex]) {
+            processDot(dot);
+        }
+      }
+
+      function clearCurrentPage() { 
+        pages[currentPageIndex] = [];
+        clearCanvas();
+        document.querySelectorAll('.page-buttons button').forEach(btn => {
+        
+        if (parseInt(btn.textContent) === currentPageIndex + 1) {
+            btn.classList.remove('written');
+        }
+        });
       }
     </script>
   </body>
