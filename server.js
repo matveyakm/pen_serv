@@ -28,7 +28,7 @@ app.post('/api/dot', (req, res) => {
       }
     });
     
-    console.log(`Получена точка: x=${dot.x}, y=${dot.y}, type=${dot.dotType}, time=${dot.time}`);
+    console.log(`Получена точка: x=${dot.x}, y=${dot.y}, type=${dot.dotType}, page=${dot.page}`);
     res.json({ success: true });
   } else {
     res.status(400).json({ error: 'Invalid dot data' });
@@ -169,6 +169,7 @@ app.get('/', (req, res) => {
   </head>
   <body>
     <h3>Письмо в реальном времени с NeoSmartpen R1</h3>
+    <button onclick="switchAutoPageSwitch()" style="background:#28a745">AutoPageSwitch</button>
 
     <canvas id="canvas"></canvas>
     
@@ -202,6 +203,8 @@ app.get('/', (req, res) => {
     <script>
       const canvas = document.getElementById('canvas');
       const ctx = canvas.getContext('2d');
+
+      let autoPageSwitch = true;
   
       const PAGE_WIDTH_MM = 70;
       const PAGE_HEIGHT_MM = 90;
@@ -262,6 +265,8 @@ app.get('/', (req, res) => {
       const pages = Array.from({ length: 10 }, () => []);
       let currentPageIndex = 0;
 
+      const realPages = [];
+
       let buffer = [];  // Буфер для точек (чтобы избежать асинхронных скачков)
       let lastTime = 0;  // Для проверки порядка
 
@@ -309,6 +314,16 @@ app.get('/', (req, res) => {
         function processDot(dot) {
             buffer.push(dot);
 
+            if (realPages.includes(dot.page) === false) {
+                realPages.push(dot.page);
+            }
+            
+            if (autoPageSwitch) {
+                if (realPages.indexOf(dot.page) !== currentPageIndex) {
+                    goToPage(realPages.indexOf(dot.page)+1);
+                }
+            }
+
             setTimeout(() => {
               buffer.sort((a, b) => a.time - b.time);
 
@@ -333,7 +348,8 @@ app.get('/', (req, res) => {
 
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            ctx.strokeStyle = 'black';
+
+            ctx.strokeStyle = getColor(realPages.indexOf(dot.page));
             ctx.lineWidth = lineWidth;
 
             if (dot.dotType === 0 || dot.dotType === undefined || previousX === null) {
@@ -426,6 +442,26 @@ app.get('/', (req, res) => {
         for (const dot of pages[currentPageIndex]) {
             processDot(dot);
         }
+      }
+      
+      function getColor(page) {
+        if (page % 8 === 0 || autoPageSwitch) return 'black';
+        if (page % 8 === 1) return '#3498db';
+        if (page % 8 === 2) return '#2ecc71';
+        if (page % 8 === 3) return '#9b59b6';
+        if (page % 8 === 4) return '#f1c40f';
+        if (page % 8 === 5) return '#e67e22';
+        if (page % 8 === 6) return '#1abc9c';
+        if (page % 8 === 7) return '#34495e';
+      }
+      
+      function switchAutoPageSwitch() {
+        autoPageSwitch = !autoPageSwitch;
+        document.querySelectorAll('button').forEach(btn => {
+        if (btn.textContent == "AutoPageSwitch") {
+            btn.style.background = autoPageSwitch ? '#28a745' : '#dc3545';
+        }
+        });
       }
 
       function clearCurrentPage() { 
