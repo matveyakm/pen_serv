@@ -13,6 +13,7 @@ app.use(express.json({ limit: '10mb' }));
 
 // Хранилище всех точек (для новых подключений)
 let allDots = [];
+let force252 = false;
 
 // POST-эндпоинт для точек от ручки
 app.post('/api/dot', (req, res) => {
@@ -35,16 +36,56 @@ app.post('/api/dot', (req, res) => {
   }
 });
 
-app.get('/health', (req, res) => {
+app.post('/health', (req, res) => {
+  // Опционально: можно прочитать и залогировать connectedPen
+  const { connectedPen } = req.body;
+  
+  console.log('Получен POST /health от ручки:', connectedPen || 'без идентификатора', new Date().toISOString());
+  
+  if (connectedPen === "NaN") {
+    const statusCode = force252 ? 252 : 200;
+    res.status(statusCode).send('OK');
+    force252 = false
+  } else {
     res.status(200).send('OK');
-    console.log('Получен запрос здоровья активности');
+  }
 
-    // Уведомляем всех браузеров
-    wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(JSON.stringify({ type: 'activity_health' }));
-        }
-    });
+  // Уведомляем все подключённые браузеры
+  wss.clients.forEach(client => {
+      if (client.readyState === WebSocket.OPEN) {
+          client.send(JSON.stringify({ 
+              type: 'activity_health',
+              connectedPen: connectedPen || null,   // можно передать дальше в UI
+              timestamp: new Date().toISOString(),
+              force252: force252
+          }));
+      }
+  });
+});
+
+wss.on('connection', (ws) => {
+  ws.on('message', (message) => {
+      try {
+          const data = JSON.parse(message);
+
+          if (data.type === 'set_force252') {
+              force252 = !!data.value;  // true/false
+              console.log(`force252 изменён на ${force252} по команде из браузера`);
+
+              // Можно сразу уведомить всех о новом состоянии (опционально)
+              wss.clients.forEach(client => {
+                  if (client.readyState === WebSocket.OPEN) {
+                      client.send(JSON.stringify({
+                          type: 'force252_changed',
+                          value: force252
+                      }));
+                  }
+              });
+          }
+      } catch (e) {
+          console.error('Ошибка парсинга WS-сообщения:', e);
+      }
+  });
 });
 
 // Главная страница с холстом для просмотра + индикаторы
@@ -170,6 +211,10 @@ app.get('/', (req, res) => {
   <body>
     <h3>Письмо в реальном времени с NeoSmartpen R1</h3>
     <button onclick="switchAutoPageSwitch()" style="background:#28a745">AutoPageSwitch</button>
+    <button onclick="toggleForce252()" id="force252Btn" style="background:#999999; margin: 10px auto; display:block;">
+  Переподключить
+</button>
+    <div id="penStatus" class="status-indicator" style="position: fixed; bottom: 10px; right: 310px; z-index: 1000; display: flex;">Pen: —</div>
 
     <canvas id="canvas"></canvas>
     
@@ -272,6 +317,8 @@ app.get('/', (req, res) => {
 
       // WebSocket + основной индикатор (красный/зелёный)
       const ws = new WebSocket('ws://' + location.hostname + ':' + location.port);
+
+      let force252 = false;
   
       ws.onopen = () => {
         console.log('WS подключён');
@@ -305,9 +352,37 @@ app.get('/', (req, res) => {
             }
           });
         } else if (data.type === 'activity_health') {
-          startTimer(healthIndicator, healthTimer, '#007bff', healthTimerId);  // синий
+          startTimer(healthIndicator, healthTimer, '#007bff', healthTimerId);
+          if (data.connectedPen) {
+              const penEl = document.getElementById('penStatus');
+              const btn = document.getElementById('force252Btn');
+              if (penEl) {
+                  penEl.textContent = "Pen: " + (data.connectedPen || "—");
+                  if (data.connectedPen === "NaN") {
+                      penEl.style.color = '#dc3545'; // красный
+                      btn.style.background = '#dc3545';
+                  } else {
+                      penEl.style.color = '#28a745';
+                    btn.style.background = '#999999'; 
+                  }
+                  btn.textContent = "Переподключить";
+                  penEl.classList.add('connected');
+              }
+              // Можно запустить отдельный таймер/анимацию для pen
+              //startTimer(penEl, penTimer || 15000, '#28a745', 'penTimerId');
+          } else {
+              // Если connectedPen не пришло — считаем, что просто сервер жив
+              document.getElementById('penStatus').textContent = 'Pen: —';
+          }
         } else if (data.type === 'activity_dot') {
           startTimer(dotIndicator, dotTimer, 'green', dotTimerId);
+        } else if (data.type === 'force252_changed') {
+            force252 = data.value;
+            const btn = document.getElementById('force252Btn');
+            if (btn) {
+                btn.textContent = force252 ? "Запрос отправлен" : "Переподключить";
+                btn.style.background = force252 ? '#6465f3' : '#999999';
+            }
         }
       };
 
@@ -462,6 +537,27 @@ app.get('/', (req, res) => {
             btn.style.background = autoPageSwitch ? '#28a745' : '#dc3545';
         }
         });
+      }
+
+      function toggleForce252() {
+        force252 = true;
+        
+        // Отправляем команду серверу
+        ws.send(JSON.stringify({
+            type: 'set_force252',
+            value: force252
+        }));
+        
+        // Меняем вид кнопки
+        const btn = document.getElementById('force252Btn');
+        if (force252) {
+            btn.textContent = "Переподключение...";
+            btn.style.background = '#6565ff';
+        } else {
+            btn.textContent = "Переподключить";
+            btn.style.background = '#999999';
+        }
+        force252 = false;
       }
 
       function clearCurrentPage() { 
